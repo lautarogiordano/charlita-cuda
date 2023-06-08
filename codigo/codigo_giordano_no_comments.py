@@ -17,10 +17,6 @@ warnings.simplefilter("ignore", category=NumbaPendingDeprecationWarning)
 from numba.cuda.random import create_xoroshiro128p_states, xoroshiro128p_uniform_float64
 
 
-# La parte más importante del código, estas funciones bloquean/desbloquean
-# el acceso a memoria de las componentes i, j del array w
-# Notar que primero se bloquea la componente con índice menor, sin importar
-# el orden en el que le paso i y j
 @cuda.jit(device=True)
 def double_lock(mutex, i, j):
     first, second = (i, j) if i < j else (j, i)
@@ -46,6 +42,8 @@ def double_unlock(mutex, i, j):
 
 
 # Kernel
+
+
 @cuda.jit
 def stream_exchange(w, r, mutex, n_agents, wmin, f, mcs, rng_state):
     tid = cuda.grid(1)
@@ -56,14 +54,6 @@ def stream_exchange(w, r, mutex, n_agents, wmin, f, mcs, rng_state):
 
     # Evolución temporal dentro del kernel
     for t in range(mcs):
-        # Esto es importante. No siempre vale que un hilo se encarga de un
-        # agente. Yo puedo elegir arbitrariamente la cantidad de hilos en mi
-        # grid. Si esta es menor que la cantidad de agentes, entonces algunos
-        # hilos se van a encargar de más de un agente. En esos casos el hilo
-        # tid se va a encargar del agente tid y de los agentes tid + n * stride,
-        # donde stride es el tamaño de la grilla. Esto lo hago porque quizás
-        # una grilla más chica corre más rápido que una adecuada al tamaño del
-        # sistema
         for i in range(tid, n_agents, stride):
             # Elijo un oponente aleatorio para el agente i
             j = int(xoroshiro128p_uniform_float64(rng_state, i) * (n_agents))
@@ -93,6 +83,7 @@ def stream_exchange(w, r, mutex, n_agents, wmin, f, mcs, rng_state):
 
 
 # Funcion que crea los datos iniciales, streams y semillas.
+
 def run_gpu(
     n_streams, n_agents, tpb=32, bpg=512, wmin=1e-17, f=0.0, mcs=100, save=False
 ):
@@ -161,7 +152,6 @@ def get_opponents_cpu(n_agents):
     return random_array
 
 
-# Equivalente al kernel pero en cpu
 def cpu_exchange(n_agents, w, r, wmin, f, mcs):
     opponents = np.arange(0, n_agents)
 
